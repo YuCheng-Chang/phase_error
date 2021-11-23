@@ -100,3 +100,25 @@ for t=0:stop_time
 end
 figure;
 plot(plt_X,plt_Y);
+xlabel('time(sec)');
+ylabel('|error|(deg)');
+%% phase error vs ar order
+plt_X=1:optimal_parameters.ar_order+10;
+plt_Y=zeros(size(plt_X));
+truephase=T{row_index,'epochs_truephase_mean'}(1,ceil(end/2),:);
+truephase=reshape(truephase,1,[]);
+for arorder=plt_X
+    [estphase, estamp] = predict_phase(epochs(((-optimal_parameters.window_length+1):0)+ceil(end/2),:), ...
+        D, optimal_parameters.edge, arorder, [HILBERTWIN/2,HILBERTWIN/2]);
+    estphase=reshape(estphase,1,[]);
+    phase_error=rad2deg(ang_diff(estphase,truephase));
+    phase_error=mean(abs(phase_error),'all');
+    plt_Y(1,arorder)=phase_error;
+end
+figure;
+plot(plt_X,plt_Y);
+hold on;
+plot(optimal_parameters.ar_order,plt_Y(optimal_parameters.ar_order),'r*');
+xlabel('ar order');
+ylabel('|error|(deg)');
+clear truephase phase_error estphase
