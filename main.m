@@ -1,4 +1,5 @@
 %% data preprocessing
+clear all;
 fs=1000;
 PEAK_FREQUENCY_INTERVAL = [8 14];
 HILBERTWIN=128;
@@ -79,38 +80,32 @@ ang_diff = @(x, y) angle(exp(1i*x)./exp(1i*y));
 D = design_phastimate_filter(optimal_parameters.filter_order, peak_frequency, fs);
 stop_time=1*fs;
 plt_X=(0:stop_time)/fs;
-plt_Y=zeros(size(plt_X));
-for t=0:stop_time
-    [estphase, estamp] = predict_phase(epochs(((-optimal_parameters.window_length+1):0)+ceil(end/2),:), ...
-        D, optimal_parameters.edge, optimal_parameters.ar_order, [HILBERTWIN,stop_time],t);
-    truephase=T{row_index,'epochs_truephase_mean'}(1,ceil(end/2)+t,:);
-    estphase=reshape(estphase,1,[]);
-    truephase=reshape(truephase,1,[]);
-    phase_error=rad2deg(ang_diff(estphase,truephase));
-    
-    phase_error=mean(abs(phase_error),'all');
-    plt_Y(1,t+1)=phase_error;
-    if t<10
-        disp(size(estphase));
-        disp(size(truephase));
-        fprintf('t=%4d,\nphase error=',t);
-        disp(phase_error);
-    end
-    
-end
+
+
+[estphase, ~,~] = predict_phase(epochs(((-optimal_parameters.window_length+1):0)+ceil(end/2),:), ...
+    D, optimal_parameters.edge, optimal_parameters.ar_order, [HILBERTWIN,stop_time]);
+truephase=squeeze(T{row_index,'epochs_truephase_mean'}(1,ceil(end/2):end,:));% time x channel
+% estphase=reshape(estphase,1,[]);
+% truephase=reshape(truephase,1,[]);
+phase_error=abs(rad2deg(ang_diff(estphase,truephase)));
+
+% phase_error=mean(abs(phase_error),'all');
+plt_Y=mean(phase_error,2);
 figure;
+
 plot(plt_X,plt_Y);
 xlabel('time(sec)');
 ylabel('|error|(deg)');
 %% phase error vs ar order
 plt_X=1:optimal_parameters.ar_order+10;
 plt_Y=zeros(size(plt_X));
-truephase=T{row_index,'epochs_truephase_mean'}(1,ceil(end/2),:);
-truephase=reshape(truephase,1,[]);
+truephase=T{row_index,'epochs_truephase_mean'}(1,ceil(end/2):end,:);
+truephase=squeeze(truephase);
+truephase=truephase(1,:);%channel 1
 for arorder=plt_X
-    [estphase, estamp] = predict_phase(epochs(((-optimal_parameters.window_length+1):0)+ceil(end/2),:), ...
+    [estphase, ~,~] = predict_phase(epochs(((-optimal_parameters.window_length+1):0)+ceil(end/2),:), ...
         D, optimal_parameters.edge, arorder, [HILBERTWIN/2,HILBERTWIN/2]);
-    estphase=reshape(estphase,1,[]);
+    estphase=estphase(1,:);
     phase_error=rad2deg(ang_diff(estphase,truephase));
     phase_error=mean(abs(phase_error),'all');
     plt_Y(1,arorder)=phase_error;
@@ -121,4 +116,73 @@ hold on;
 plot(optimal_parameters.ar_order,plt_Y(optimal_parameters.ar_order),'r*');
 xlabel('ar order');
 ylabel('|error|(deg)');
+hold off;
 clear truephase phase_error estphase
+%% use peak interval to predict future peaks
+plot_channel=1;
+filtered_epochs=filtfilt(D,epochs);
+train_set=filtered_epochs(1:ceil(end/2),:);
+[prediction,target_intervals]=predict_targets(train_set,4,0.6*fs,3);
+signal=filtered_epochs(:,plot_channel);
+sample=1:numel(signal);
+
+figure;
+ax1=gca;
+plot(sample,signal);
+hold(ax1,'on');
+future_sample=sample(ceil(end/2)+1:end);
+future_signal=signal(ceil(end/2)+1:end);
+plot(future_sample(prediction(:,plot_channel)==true),future_signal(prediction(:,plot_channel)==true),'*','MarkerEdgeColor','black');
+past_signal=signal(1:ceil(end/2));
+targeted_phase=find_target_phase(past_signal');
+scatter(ax1,sample(targeted_phase==1),past_signal(targeted_phase==1),'red');
+scatter(ax1,sample(targeted_phase==2),past_signal(targeted_phase==2),'cyan');
+scatter(ax1,sample(targeted_phase==3),past_signal(targeted_phase==3),'yellow');
+scatter(ax1,sample(targeted_phase==4),past_signal(targeted_phase==4),'green');
+xline(numel(past_signal),'r--',{'now'});
+title(sprintf('channel %d',plot_channel));
+legend(ax1,'EEG','predicted trough','0^{o}','90^{o}','180^{o}','270^{o}','Location','eastoutside');
+hold(ax1,'off');
+%% estimation and truth
+ang_diff = @(x, y) angle(exp(1i*x)./exp(1i*y));
+D = design_phastimate_filter(optimal_parameters.filter_order, peak_frequency, fs);
+stop_time=1*fs;
+plt_X=(0:stop_time)/fs;
+% plt_Y=zeros(size(plt_X));
+future_signal=signal(ceil(end/2):ceil(end/2)+stop_time);
+M=size(filtered_epochs,2);
+% estamp=zeros(stop_time+1,M);
+
+[estphase, estamp,predicted_signal] = predict_phase(epochs(((-optimal_parameters.window_length+1):0)+ceil(end/2),:), ...
+    D, optimal_parameters.edge, optimal_parameters.ar_order, [HILBERTWIN,stop_time]);
+truephase=squeeze(T{row_index,'epochs_truephase_mean'}(1,ceil(end/2):end,:));
+% estphase=reshape(estphase,1,[]);
+% truephase=reshape(truephase,1,[]);
+phase_error=abs(rad2deg(ang_diff(estphase,truephase)));
+
+% phase_error=mean(abs(phase_error),'all');
+plt_Y=phase_error(:,plot_channel);
+% plt_Y=mean(phase_error,2);
+
+
+figure;
+subplot(2,1,1)
+plot(plt_X,plt_Y);
+hold on;
+plot(plt_X,rad2deg(estphase(:,plot_channel)));
+plot(plt_X,rad2deg(truephase(:,plot_channel)));
+hold off;
+legend({'phase error','actual phase','estimated phase'},'Location','eastoutside');
+xlabel('time(sec)');
+ylabel('angle(deg)');
+% ylim([65,120]);
+subplot(2,1,2);
+plot(plt_X,future_signal);
+hold on;
+plot(plt_X,estamp(:,plot_channel));%insatantaneous envelope
+plot(plt_X,predicted_signal(:,plot_channel));
+legend({'actual signal','instantaneous envelope','predicted waveform'},'Location','eastoutside');
+xlabel('time(sec)');
+ylabel('amplitude');
+hold off;
+sgtitle(sprintf('channel %d',plot_channel));

@@ -1,4 +1,4 @@
-function [phase, amplitude] = predict_phase(data, D, edge, ord, hilbertwindow, varargin)
+function [phase, amplitude,predicted_signal] = predict_phase(data, D, edge, ord, hilbertwindow, varargin)
 % disp('phastimate data size');
 % disp(size(data));
 %PHASTIMATE Pre-stimulus phase estimation(causal)
@@ -78,7 +78,9 @@ data_filtered_withoutedge_predicted_hilbertwindow_analytic = hilbert(data_filter
 %xpos = (size(data_filtered_withoutedge_predicted,1)-iterations+edge);
 %line([xpos xpos], ylim(gca))
 
-phase = angle(data_filtered_withoutedge_predicted_hilbertwindow_analytic(end-iterations+edge+offset_correction,:));
-amplitude = mean(abs(data_filtered_withoutedge_predicted_hilbertwindow_analytic));
+phase = angle(data_filtered_withoutedge_predicted_hilbertwindow_analytic(end-iterations+edge:end,:));
+predicted_signal=real(data_filtered_withoutedge_predicted_hilbertwindow_analytic(end-iterations+edge:end,:));
+amplitude = abs(data_filtered_withoutedge_predicted_hilbertwindow_analytic);%instantaneous envelope
+amplitude=amplitude(end-iterations+edge:end,:);
 
 end
